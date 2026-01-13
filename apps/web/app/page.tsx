@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, FileText, Sparkles, History, Check, X, Download, Play } from "lucide-react";
 import Link from "next/link";
@@ -13,9 +14,16 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { ProgressUI } from "@/components/ProgressUI";
-import { VideoPlayer } from "@/components/VideoPlayer";
 import { useJobHistory } from "@/lib/useJobHistory";
+
+// Lazy load heavy components
+const ProgressUI = dynamic(() => import("@/components/ProgressUI").then(mod => ({ default: mod.ProgressUI })), {
+  ssr: false,
+});
+
+const VideoPlayer = dynamic(() => import("@/components/VideoPlayer").then(mod => ({ default: mod.VideoPlayer })), {
+  ssr: false,
+});
 
 type JobState = "idle" | "uploading" | "processing" | "completed" | "error";
 

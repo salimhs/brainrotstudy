@@ -7,16 +7,20 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1000
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      cache_from:
+        - brainrotstudy-api:latest
     ports:
       - "8000:8000"
     environment:
@@ -33,11 +37,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
   worker:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
+      cache_from:
+        - brainrotstudy-worker:latest
     environment:
       - REDIS_URL=redis://redis:6379/0
       - STORAGE_ROOT=/app/storage
@@ -46,6 +53,9 @@ services:
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP=True
+      - CELERY_TASK_ACKS_LATE=True
+      - CELERY_WORKER_PREFETCH_MULTIPLIER=1
     volumes:
       - ./storage:/app/storage
       - ./shared:/app/shared
@@ -53,17 +63,22 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    restart: unless-stopped
 
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      cache_from:
+        - brainrotstudy-web:latest
     ports:
       - "3000:3000"
     environment:
       - API_URL=http://api:8000
+      - NODE_ENV=production
     depends_on:
       - api
+    restart: unless-stopped
 
 volumes:
   redis_data:

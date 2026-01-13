@@ -27,14 +27,6 @@ app.conf.update(
     worker_max_tasks_per_child=50,  # Restart worker after 50 tasks to prevent memory leaks
     broker_connection_retry_on_startup=True,
     result_expires=3600,  # Results expire after 1 hour
-    result_backend_transport_options={
-        'master_name': 'mymaster',
-    },
-    broker_transport_options={
-        'visibility_timeout': 3600,
-        'fanout_prefix': True,
-        'fanout_patterns': True,
-    },
 )
 
 if __name__ == "__main__":

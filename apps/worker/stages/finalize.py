@@ -1,0 +1,202 @@
+"""Stage 8: Finalize output and generate extras."""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, "/app")
+
+from shared.models import ScriptPlan, SlidesExtracted, TimelinePlan
+from shared.utils import get_job_dir, get_job_logger, load_job_metadata
+
+
+def run_finalize_stage(job_id: str) -> None:
+    """
+    Finalize the job:
+    - Copy rendered video to output folder
+    - Generate metadata
+    - Generate export extras if requested
+    """
+    logger = get_job_logger(job_id)
+    job_dir = get_job_dir(job_id)
+    metadata = load_job_metadata(job_id)
+    
+    if not metadata:
+        raise ValueError(f"Job {job_id} not found")
+    
+    output_dir = job_dir / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    final_video_path = output_dir / "final.mp4"
+    
+    # Check for idempotency
+    if final_video_path.exists() and final_video_path.stat().st_size > 0:
+        logger.info("CACHE HIT: final.mp4 already exists, skipping")
+        return
+    
+    # Copy rendered video to output
+    raw_video_path = job_dir / "render" / "video_raw.mp4"
+    if not raw_video_path.exists():
+        raise ValueError("video_raw.mp4 not found")
+    
+    shutil.copy(raw_video_path, final_video_path)
+    logger.info("Copied video to output folder")
+    
+    # Generate metadata
+    video_metadata = get_video_metadata(final_video_path, logger)
+    with open(output_dir / "metadata.json", "w") as f:
+        json.dump(video_metadata, f, indent=2)
+    
+    # Generate export extras if requested
+    if metadata.options.export_extras:
+        generate_extras(job_id, logger)
+    
+    # Copy SRT to output
+    srt_source = job_dir / "captions" / "captions.srt"
+    if srt_source.exists():
+        shutil.copy(srt_source, output_dir / "captions.srt")
+    
+    logger.info("Finalization completed")
+
+
+def get_video_metadata(video_path: Path, logger) -> dict:
+    """Get video metadata using FFprobe."""
+    try:
+        result = subprocess.run([
+            "ffprobe",
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            str(video_path)
+        ], capture_output=True, timeout=30)
+        
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            format_info = data.get("format", {})
+            
+            return {
+                "duration_sec": float(format_info.get("duration", 0)),
+                "size_bytes": int(format_info.get("size", 0)),
+                "format": format_info.get("format_name", "mp4"),
+                "bitrate": format_info.get("bit_rate", ""),
+            }
+    except Exception as e:
+        logger.warning(f"Could not get video metadata: {e}")
+    
+    # Fallback to file size only
+    return {
+        "duration_sec": 0,
+        "size_bytes": video_path.stat().st_size if video_path.exists() else 0,
+        "format": "mp4",
+    }
+
+
+def generate_extras(job_id: str, logger) -> None:
+    """Generate export extras: notes.md, anki.csv."""
+    job_dir = get_job_dir(job_id)
+    output_dir = job_dir / "output"
+    
+    # Load script and slides
+    script_path = job_dir / "llm" / "script.json"
+    script = None
+    if script_path.exists():
+        with open(script_path, "r") as f:
+            script = ScriptPlan.model_validate(json.load(f))
+    
+    slides_path = job_dir / "extracted" / "slides.json"
+    slides = None
+    if slides_path.exists():
+        with open(slides_path, "r") as f:
+            slides = SlidesExtracted.model_validate(json.load(f))
+    
+    if script:
+        # Generate notes.md
+        generate_notes_md(script, slides, output_dir / "notes.md", logger)
+        
+        # Generate anki.csv
+        generate_anki_csv(script, output_dir / "anki.csv", logger)
+
+
+def generate_notes_md(
+    script: ScriptPlan, 
+    slides: SlidesExtracted | None,
+    output_path: Path,
+    logger
+) -> None:
+    """Generate markdown study notes."""
+    lines = []
+    
+    lines.append(f"# {script.title}")
+    lines.append("")
+    lines.append(f"> {script.hook}")
+    lines.append("")
+    
+    lines.append("## Key Takeaways")
+    lines.append("")
+    for takeaway in script.study_takeaways:
+        lines.append(f"- {takeaway}")
+    lines.append("")
+    
+    lines.append("## Script Outline")
+    lines.append("")
+    for i, line in enumerate(script.script_lines, 1):
+        lines.append(f"{i}. {line.line}")
+        if line.emphasis:
+            lines.append(f"   - Key words: {', '.join(line.emphasis)}")
+    lines.append("")
+    
+    if slides and slides.slides:
+        lines.append("## Source Slides")
+        lines.append("")
+        for slide in slides.slides[:10]:
+            lines.append(f"### Slide {slide.index}: {slide.title}")
+            for bullet in slide.bullets[:5]:
+                lines.append(f"- {bullet}")
+            lines.append("")
+    
+    lines.append("---")
+    lines.append("*Generated by BrainRotStudy*")
+    
+    with open(output_path, "w") as f:
+        f.write("\n".join(lines))
+    
+    logger.info("Generated notes.md")
+
+
+def generate_anki_csv(script: ScriptPlan, output_path: Path, logger) -> None:
+    """Generate Anki flashcard CSV."""
+    rows = ["front,back"]
+    
+    # Create cards from takeaways
+    for i, takeaway in enumerate(script.study_takeaways, 1):
+        # Create simple Q/A format
+        question = f"What is key point #{i} about {script.title}?"
+        answer = takeaway
+        
+        # Escape commas and quotes for CSV
+        question = question.replace('"', '""')
+        answer = answer.replace('"', '""')
+        
+        rows.append(f'"{question}","{answer}"')
+    
+    # Create cards from emphasis words
+    for line in script.script_lines:
+        if line.emphasis:
+            for word in line.emphasis[:2]:  # Limit to 2 per line
+                question = f"In the context of {script.title}, explain: {word}"
+                # Find context from the line
+                answer = line.line
+                
+                question = question.replace('"', '""')
+                answer = answer.replace('"', '""')
+                
+                rows.append(f'"{question}","{answer}"')
+    
+    with open(output_path, "w") as f:
+        f.write("\n".join(rows[:20]))  # Limit to 20 cards
+    
+    logger.info("Generated anki.csv")

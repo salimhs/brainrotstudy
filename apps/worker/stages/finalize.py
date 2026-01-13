@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, "/app")
 
@@ -123,7 +124,7 @@ def generate_extras(job_id: str, logger) -> None:
 
 def generate_notes_md(
     script: ScriptPlan, 
-    slides: SlidesExtracted | None,
+    slides: Optional[SlidesExtracted],
     output_path: Path,
     logger
 ) -> None:

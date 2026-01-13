@@ -134,14 +134,15 @@ def try_piper(text: str, output_path: Path, logger) -> bool:
         with open(temp_text, "w") as f:
             f.write(text)
         
-        # Run piper
+        # Run piper with proper file handle management
         model = os.getenv("PIPER_MODEL", "en_US-lessac-medium")
-        result = subprocess.run(
-            ["piper", "--model", model, "--output_file", str(output_path)],
-            stdin=open(temp_text),
-            capture_output=True,
-            timeout=120,
-        )
+        with open(temp_text, "r") as stdin_file:
+            result = subprocess.run(
+                ["piper", "--model", model, "--output_file", str(output_path)],
+                stdin=stdin_file,
+                capture_output=True,
+                timeout=120,
+            )
         
         temp_text.unlink()
         

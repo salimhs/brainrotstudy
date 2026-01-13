@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, "/app")
 
@@ -68,7 +69,7 @@ def run_captions_stage(job_id: str) -> None:
     logger.info(f"Generated captions: {len(captions.words)} words, {len(captions.lines)} lines")
 
 
-def try_whisperx(audio_path: Path, logger) -> CaptionsWordLevel | None:
+def try_whisperx(audio_path: Path, logger) -> Optional[CaptionsWordLevel]:
     """Try WhisperX for word-level transcription."""
     try:
         import whisperx
@@ -131,7 +132,7 @@ def try_whisperx(audio_path: Path, logger) -> CaptionsWordLevel | None:
     return None
 
 
-def try_whisper(audio_path: Path, logger) -> CaptionsWordLevel | None:
+def try_whisper(audio_path: Path, logger) -> Optional[CaptionsWordLevel]:
     """Try OpenAI Whisper for transcription."""
     try:
         import whisper
@@ -188,7 +189,7 @@ def try_whisper(audio_path: Path, logger) -> CaptionsWordLevel | None:
     return None
 
 
-def create_fallback_captions(timeline: TimelinePlan | None, logger) -> CaptionsWordLevel:
+def create_fallback_captions(timeline: Optional[TimelinePlan], logger) -> CaptionsWordLevel:
     """Create segment-level captions from timeline as fallback."""
     words = []
     lines = []

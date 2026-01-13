@@ -3,11 +3,11 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from shared.models import JobMetadata, JobStatus, JobStage, SSEEvent
+from shared.models import JobMetadata, JobStatus, JobStage, SSEEvent, utc_now
 
 
 # Storage root directory
@@ -61,7 +61,7 @@ def save_job_metadata(metadata: JobMetadata) -> None:
     job_dir = get_job_dir(metadata.job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
     meta_path = job_dir / "metadata.json"
-    metadata.updated_at = datetime.utcnow()
+    metadata.updated_at = utc_now()
     with open(meta_path, "w") as f:
         json.dump(metadata.model_dump(mode="json"), f, indent=2, default=str)
 
@@ -147,7 +147,7 @@ def create_sse_event(
         progress_pct=progress_pct,
         message=message,
         log_tail=read_log_tail(job_id, 10),
-        timestamp=datetime.utcnow(),
+        timestamp=utc_now(),
     )
 
 

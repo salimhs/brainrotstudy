@@ -6,6 +6,7 @@ import sys
 import uuid
 import hashlib
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, "/app")
 
@@ -82,10 +83,10 @@ def fetch_asset_for_cue(
     job_id: str,
     query: str,
     time: float,
-    slides: SlidesExtracted | None,
+    slides: Optional[SlidesExtracted],
     assets_dir: Path,
     logger
-) -> AssetItem | None:
+) -> Optional[AssetItem]:
     """Fetch a single asset for a visual cue."""
     asset_id = f"cue_{time:.0f}"
     asset_path = assets_dir / f"{asset_id}.png"
@@ -123,7 +124,7 @@ def fetch_asset_for_cue(
     return None
 
 
-def try_openverse(query: str, save_path: Path, logger) -> AssetItem | None:
+def try_openverse(query: str, save_path: Path, logger) -> Optional[AssetItem]:
     """Try to fetch an image from Openverse API."""
     try:
         import requests
@@ -175,7 +176,7 @@ def try_openverse(query: str, save_path: Path, logger) -> AssetItem | None:
     return None
 
 
-def generate_title_card(text: str, save_path: Path, logger) -> AssetItem | None:
+def generate_title_card(text: str, save_path: Path, logger) -> Optional[AssetItem]:
     """Generate a simple title card image as fallback."""
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -257,7 +258,7 @@ def generate_title_card(text: str, save_path: Path, logger) -> AssetItem | None:
     return None
 
 
-def select_background_video(job_id: str, script: ScriptPlan | None, logger) -> AssetItem | None:
+def select_background_video(job_id: str, script: Optional[ScriptPlan], logger) -> Optional[AssetItem]:
     """Select a background video loop based on preset."""
     # Check for bundled background loops
     bg_loops_dir = Path("/app/assets/bg_loops")
@@ -286,7 +287,7 @@ def select_background_video(job_id: str, script: ScriptPlan | None, logger) -> A
     )
 
 
-def select_music(job_id: str, script: ScriptPlan | None, logger) -> AssetItem | None:
+def select_music(job_id: str, script: Optional[ScriptPlan], logger) -> Optional[AssetItem]:
     """Select background music based on preset."""
     music_dir = Path("/app/assets/music")
     

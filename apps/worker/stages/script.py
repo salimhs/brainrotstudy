@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, "/app")
 
@@ -81,11 +82,11 @@ def run_script_stage(job_id: str) -> None:
 
 def try_openai_generation(
     job_id: str, 
-    topic: str | None, 
-    outline: str | None,
-    slides: SlidesExtracted | None,
+    topic: Optional[str], 
+    outline: Optional[str],
+    slides: Optional[SlidesExtracted],
     options
-) -> ScriptPlan | None:
+) -> Optional[ScriptPlan]:
     """Try to generate script using OpenAI API."""
     logger = get_job_logger(job_id)
     
@@ -118,11 +119,11 @@ def try_openai_generation(
 
 def try_anthropic_generation(
     job_id: str,
-    topic: str | None,
-    outline: str | None,
-    slides: SlidesExtracted | None,
+    topic: Optional[str],
+    outline: Optional[str],
+    slides: Optional[SlidesExtracted],
     options
-) -> ScriptPlan | None:
+) -> Optional[ScriptPlan]:
     """Try to generate script using Anthropic API."""
     logger = get_job_logger(job_id)
     
@@ -189,9 +190,9 @@ Visual cues should be specific, searchable terms for stock images."""
 
 
 def build_script_prompt(
-    topic: str | None,
-    outline: str | None,
-    slides: SlidesExtracted | None,
+    topic: Optional[str],
+    outline: Optional[str],
+    slides: Optional[SlidesExtracted],
     options
 ) -> str:
     """Build the prompt for script generation."""
@@ -225,9 +226,9 @@ def build_script_prompt(
 
 def create_fallback_script(
     job_id: str,
-    topic: str | None,
-    outline: str | None,
-    slides: SlidesExtracted | None,
+    topic: Optional[str],
+    outline: Optional[str],
+    slides: Optional[SlidesExtracted],
     options
 ) -> ScriptPlan:
     """Create a simple fallback script when LLM is unavailable."""

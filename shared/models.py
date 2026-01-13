@@ -1,9 +1,14 @@
 """Pydantic models for the BrainRotStudy pipeline."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
+
+
+def utc_now() -> datetime:
+    """Get current UTC time (Python 3.12+ compatible)."""
+    return datetime.now(timezone.utc)
 
 
 class JobStatus(str, Enum):
@@ -200,7 +205,7 @@ class SSEEvent(BaseModel):
     progress_pct: int
     message: str
     log_tail: list[str] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class JobMetadata(BaseModel):
@@ -210,8 +215,8 @@ class JobMetadata(BaseModel):
     stage: Optional[JobStage] = None
     progress_pct: int = 0
     title: str = ""
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
     input_type: str = "topic"  # "topic" or "file"
     input_filename: Optional[str] = None
     options: JobOptions = Field(default_factory=JobOptions)

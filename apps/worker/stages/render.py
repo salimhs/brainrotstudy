@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, "/app")
 
@@ -80,8 +81,8 @@ def run_render_stage(job_id: str) -> None:
 def render_full_video(
     job_id: str,
     timeline: TimelinePlan,
-    captions: CaptionsWordLevel | None,
-    manifest: AssetsManifest | None,
+    captions: Optional[CaptionsWordLevel],
+    manifest: Optional[AssetsManifest],
     voice_path: Path,
     output_path: Path,
     logger

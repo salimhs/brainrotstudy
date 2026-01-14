@@ -88,46 +88,6 @@ const nextConfig = {
       bodySizeLimit: '100mb',
     },
   },
-
-  // Webpack configuration for bundle optimization
-  webpack: (config, { isServer }) => {
-    // Split chunks more aggressively for better caching
-    if (!isServer) {
-      config.optimization.splitChunks = {
-        chunks: 'all',
-        minSize: 20000,
-        maxSize: 244000,
-        cacheGroups: {
-          default: false,
-          vendors: false,
-          // Vendor chunk for node_modules
-          vendor: {
-            name: 'vendor',
-            chunks: 'all',
-            test: /[\\/]node_modules[\\/]/,
-            priority: 20,
-          },
-          // Common chunk for shared code
-          common: {
-            name: 'common',
-            minChunks: 2,
-            chunks: 'all',
-            priority: 10,
-            reuseExistingChunk: true,
-            enforce: true,
-          },
-          // Separate chunk for UI components
-          ui: {
-            name: 'ui',
-            test: /[\\/]components[\\/]ui[\\/]/,
-            chunks: 'all',
-            priority: 15,
-          },
-        },
-      };
-    }
-    return config;
-  },
 };
 
 module.exports = nextConfig;

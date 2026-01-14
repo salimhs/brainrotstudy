@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, FileText, Sparkles, History, Check, X } from "lucide-react";
@@ -235,7 +235,7 @@ export default function Home() {
                         className={`dropzone border-2 border-dashed border-border rounded-lg p-12 text-center cursor-pointer transition-all ${file ? "border-primary bg-primary/5" : "hover:border-primary/50"
                           }`}
                         onDrop={handleFileDrop}
-                        onDragOver={(e) => e.preventDefault()}
+                        onDragOver={(e: React.DragEvent) => e.preventDefault()}
                         onClick={() => document.getElementById("file-input")?.click()}
                       >
                         <input
@@ -257,7 +257,7 @@ export default function Home() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={(e) => {
+                              onClick={(e: React.MouseEvent) => {
                                 e.stopPropagation();
                                 setFile(null);
                               }}
@@ -297,7 +297,7 @@ export default function Home() {
                             id="topic"
                             placeholder="e.g., Introduction to Machine Learning"
                             value={topic}
-                            onChange={(e) => setTopic(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTopic(e.target.value)}
                             className="mt-1"
                           />
                         </div>
@@ -308,7 +308,7 @@ export default function Home() {
                             id="outline"
                             placeholder="Paste your notes or outline here..."
                             value={outline}
-                            onChange={(e) => setOutline(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setOutline(e.target.value)}
                             className="mt-1 w-full h-32 px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                           />
                         </div>
@@ -371,7 +371,7 @@ export default function Home() {
                               <Label>Video Duration</Label>
                               <Select
                                 value={options.duration}
-                                onValueChange={(v) => setOptions({ ...options, duration: v })}
+                                onValueChange={(v: string) => setOptions({ ...options, duration: v })}
                               >
                                 <SelectTrigger className="mt-2">
                                   <SelectValue />
@@ -389,7 +389,7 @@ export default function Home() {
                               <Label>Narration Style</Label>
                               <Select
                                 value={options.style_preset}
-                                onValueChange={(v) => setOptions({ ...options, style_preset: v })}
+                                onValueChange={(v: string) => setOptions({ ...options, style_preset: v })}
                               >
                                 <SelectTrigger className="mt-2">
                                   <SelectValue />
@@ -409,7 +409,7 @@ export default function Home() {
                               <Label>Pacing</Label>
                               <Select
                                 value={options.preset}
-                                onValueChange={(v) => setOptions({ ...options, preset: v })}
+                                onValueChange={(v: string) => setOptions({ ...options, preset: v })}
                               >
                                 <SelectTrigger className="mt-2">
                                   <SelectValue />
@@ -427,7 +427,7 @@ export default function Home() {
                               <Label>Caption Style</Label>
                               <Select
                                 value={options.caption_style}
-                                onValueChange={(v) => setOptions({ ...options, caption_style: v })}
+                                onValueChange={(v: string) => setOptions({ ...options, caption_style: v })}
                               >
                                 <SelectTrigger className="mt-2">
                                   <SelectValue />
@@ -449,7 +449,7 @@ export default function Home() {
                               </div>
                               <Switch
                                 checked={options.export_extras}
-                                onCheckedChange={(v) => setOptions({ ...options, export_extras: v })}
+                                onCheckedChange={(v: boolean) => setOptions({ ...options, export_extras: v })}
                               />
                             </div>
                           </div>

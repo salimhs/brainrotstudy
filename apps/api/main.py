@@ -11,6 +11,7 @@ from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -41,6 +42,9 @@ app = FastAPI(
     description="API for generating TikTok-style study videos from PDFs, slides, or topics",
     version="1.0.0",
 )
+
+# Add GZip compression middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # CORS for local development
 app.add_middleware(

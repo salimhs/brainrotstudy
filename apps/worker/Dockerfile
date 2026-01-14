@@ -23,4 +23,7 @@ COPY assets/ /app/assets/
 
 WORKDIR /app/apps/worker
 
-CMD ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+# Set Python to run in unbuffered mode for better logging
+ENV PYTHONUNBUFFERED=1
+
+CMD ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=2", "--max-tasks-per-child=50", "--task-events"]

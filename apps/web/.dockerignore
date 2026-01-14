@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+dist
+build
+.git
+.gitignore
+README.md
+.env
+.env.*
+*.log
+.DS_Store
+coverage
+.pytest_cache

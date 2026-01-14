@@ -38,6 +38,23 @@ class Preset(str, Enum):
     EXAM = "EXAM"
 
 
+class StylePreset(str, Enum):
+    """Video style presets affecting tone and narration."""
+    STANDARD = "STANDARD"       # Default educational style
+    UNHINGED = "UNHINGED"       # Chaotic, meme-heavy, gen-z energy
+    ASMR = "ASMR"               # Whispered, calming, soft-spoken
+    GOSSIP = "GOSSIP"           # Dramatic, storytelling, tea-spilling
+    PROFESSOR = "PROFESSOR"     # Academic, authoritative, formal
+
+
+class Duration(str, Enum):
+    """Video duration options."""
+    QUICK = "QUICK"             # 20-45 seconds
+    STANDARD = "STANDARD"       # 45-80 seconds
+    EXTENDED = "EXTENDED"       # 2+ minutes
+    CUSTOM = "CUSTOM"           # User-specified length
+
+
 class CaptionStyle(str, Enum):
     """Caption display styles."""
     BOLD = "BOLD"
@@ -163,11 +180,16 @@ class TimelinePlan(BaseModel):
 
 class JobOptions(BaseModel):
     """Options for job creation."""
-    length_sec: int = Field(default=60, description="Target video length (60 or 90)")
+    length_sec: int = Field(default=60, description="Target video length in seconds")
+    duration: Duration = Duration.STANDARD
     preset: Preset = Preset.BALANCED
+    style_preset: StylePreset = StylePreset.STANDARD
     caption_style: CaptionStyle = CaptionStyle.BOLD
     voice_id: str = "default"
     export_extras: bool = False
+    background_id: Optional[str] = Field(default=None, description="Selected background video ID")
+    music_id: Optional[str] = Field(default=None, description="Selected music track ID")
+    language: Optional[str] = Field(default=None, description="Target language code (e.g., 'en', 'es')")
 
 
 class JobCreate(BaseModel):

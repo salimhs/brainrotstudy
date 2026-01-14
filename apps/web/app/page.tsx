@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, FileText, Sparkles, History, Check, X, Download, Play } from "lucide-react";
+import { Upload, FileText, Sparkles, History, Check, X } from "lucide-react";
 import Link from "next/link";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,18 +11,28 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { ProgressUI } from "@/components/ProgressUI";
-import { VideoPlayer } from "@/components/VideoPlayer";
 import { useJobHistory } from "@/lib/useJobHistory";
+
+// Lazy load heavy components to reduce initial bundle size
+const ProgressUI = dynamic(() => import("@/components/ProgressUI").then(mod => ({ default: mod.ProgressUI })), {
+  loading: () => <div className="animate-pulse bg-muted h-64 rounded-lg" />,
+  ssr: false,
+});
+
+const VideoPlayer = dynamic(() => import("@/components/VideoPlayer").then(mod => ({ default: mod.VideoPlayer })), {
+  loading: () => <div className="animate-pulse bg-muted h-96 rounded-lg" />,
+  ssr: false,
+});
 
 type JobState = "idle" | "uploading" | "processing" | "completed" | "error";
 
 interface JobOptions {
   length_sec: number;
+  duration: string;
   preset: string;
+  style_preset: string;
   caption_style: string;
   voice_id: string;
   export_extras: boolean;
@@ -36,21 +47,29 @@ export default function Home() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [options, setOptions] = useState<JobOptions>({
     length_sec: 60,
+    duration: "STANDARD",
     preset: "BALANCED",
+    style_preset: "STANDARD",
     caption_style: "BOLD",
     voice_id: "default",
     export_extras: false,
   });
   const [error, setError] = useState<string | null>(null);
   const [jobData, setJobData] = useState<any>(null);
-  
+
   const { addJob, updateJob } = useJobHistory();
+
+  // Supported file extensions
+  const supportedExtensions = [".pdf", ".pptx", ".docx", ".xlsx", ".csv", ".txt", ".md", ".png", ".jpg", ".jpeg"];
 
   const handleFileDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && (droppedFile.name.endsWith(".pdf") || droppedFile.name.endsWith(".pptx"))) {
-      setFile(droppedFile);
+    if (droppedFile) {
+      const ext = droppedFile.name.substring(droppedFile.name.lastIndexOf('.')).toLowerCase();
+      if (supportedExtensions.includes(ext)) {
+        setFile(droppedFile);
+      }
     }
   }, []);
 
@@ -167,17 +186,17 @@ export default function Home() {
 
       <main className="max-w-4xl mx-auto px-4 py-12">
         {/* Hero */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-12"
         >
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
-            Turn slides into a <span className="text-primary">60s study video</span>
+            Turn documents into <span className="text-primary">TikTok-style videos</span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Upload PDF/PPTX or enter a topic. Get a vertical recap with captions, 
-            perfect for TikTok-style studying.
+            Upload any file or enter a topic. Get an engaging vertical recap with captions,
+            in your choice of style—from ASMR to Unhinged.
           </p>
         </motion.div>
 
@@ -213,9 +232,8 @@ export default function Home() {
                     <TabsContent value="upload">
                       {/* File Upload Zone */}
                       <div
-                        className={`dropzone border-2 border-dashed border-border rounded-lg p-12 text-center cursor-pointer transition-all ${
-                          file ? "border-primary bg-primary/5" : "hover:border-primary/50"
-                        }`}
+                        className={`dropzone border-2 border-dashed border-border rounded-lg p-12 text-center cursor-pointer transition-all ${file ? "border-primary bg-primary/5" : "hover:border-primary/50"
+                          }`}
                         onDrop={handleFileDrop}
                         onDragOver={(e) => e.preventDefault()}
                         onClick={() => document.getElementById("file-input")?.click()}
@@ -223,7 +241,7 @@ export default function Home() {
                         <input
                           id="file-input"
                           type="file"
-                          accept=".pdf,.pptx"
+                          accept=".pdf,.pptx,.docx,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg"
                           className="hidden"
                           onChange={handleFileSelect}
                         />
@@ -251,10 +269,10 @@ export default function Home() {
                           <div>
                             <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                             <p className="text-lg font-medium mb-1">
-                              Drop your PDF or PPTX here
+                              Drop your file here
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              or click to browse
+                              PDF, PPTX, DOCX, XLSX, TXT, MD, or images
                             </p>
                           </div>
                         )}
@@ -348,28 +366,47 @@ export default function Home() {
                           className="overflow-hidden"
                         >
                           <div className="grid md:grid-cols-2 gap-6 mt-4">
-                            {/* Length */}
+                            {/* Duration */}
                             <div>
-                              <Label>Video Length</Label>
-                              <RadioGroup
-                                value={String(options.length_sec)}
-                                onValueChange={(v) => setOptions({ ...options, length_sec: parseInt(v) })}
-                                className="flex gap-4 mt-2"
+                              <Label>Video Duration</Label>
+                              <Select
+                                value={options.duration}
+                                onValueChange={(v) => setOptions({ ...options, duration: v })}
                               >
-                                <div className="flex items-center space-x-2">
-                                  <RadioGroupItem value="60" id="60s" />
-                                  <Label htmlFor="60s">60 seconds</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                  <RadioGroupItem value="90" id="90s" />
-                                  <Label htmlFor="90s">90 seconds</Label>
-                                </div>
-                              </RadioGroup>
+                                <SelectTrigger className="mt-2">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="QUICK">⚡ Quick - 20-45 seconds</SelectItem>
+                                  <SelectItem value="STANDARD">⏱️ Standard - 45-80 seconds</SelectItem>
+                                  <SelectItem value="EXTENDED">📖 Extended - 2+ minutes</SelectItem>
+                                </SelectContent>
+                              </Select>
                             </div>
 
-                            {/* Preset */}
+                            {/* Style Preset */}
                             <div>
-                              <Label>Style Preset</Label>
+                              <Label>Narration Style</Label>
+                              <Select
+                                value={options.style_preset}
+                                onValueChange={(v) => setOptions({ ...options, style_preset: v })}
+                              >
+                                <SelectTrigger className="mt-2">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="STANDARD">📚 Standard - Clear, educational</SelectItem>
+                                  <SelectItem value="UNHINGED">🤪 Unhinged - Chaotic Gen-Z energy</SelectItem>
+                                  <SelectItem value="ASMR">🎧 ASMR - Whispered, calming</SelectItem>
+                                  <SelectItem value="GOSSIP">☕ Gossip - Dramatic storytelling</SelectItem>
+                                  <SelectItem value="PROFESSOR">🎓 Professor - Academic, formal</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            {/* Pacing Preset */}
+                            <div>
+                              <Label>Pacing</Label>
                               <Select
                                 value={options.preset}
                                 onValueChange={(v) => setOptions({ ...options, preset: v })}
@@ -403,7 +440,7 @@ export default function Home() {
                             </div>
 
                             {/* Export Extras */}
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between md:col-span-2">
                               <div>
                                 <Label>Export Extras</Label>
                                 <p className="text-sm text-muted-foreground">

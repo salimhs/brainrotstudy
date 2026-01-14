@@ -9,7 +9,7 @@ from typing import Optional
 sys.path.insert(0, "/app")
 
 from shared.models import (
-    ScriptPlan, ScriptLine, VisualCue, SlidesExtracted, Preset
+    ScriptPlan, ScriptLine, VisualCue, SlidesExtracted, Preset, StylePreset, Duration
 )
 from shared.utils import (
     get_job_dir, get_job_logger, load_job_metadata, 
@@ -97,14 +97,17 @@ def try_openai_generation(
         
         prompt = build_script_prompt(topic, outline, slides, options)
         
+        # Get style-aware system prompt
+        style = getattr(options, 'style_preset', StylePreset.STANDARD)
+        
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             messages=[
-                {"role": "system", "content": get_system_prompt()},
+                {"role": "system", "content": get_system_prompt(style)},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            temperature=0.7,
+            temperature=0.8 if style == StylePreset.UNHINGED else 0.7,
         )
         
         result = response.choices[0].message.content
@@ -134,10 +137,13 @@ def try_anthropic_generation(
         
         prompt = build_script_prompt(topic, outline, slides, options)
         
+        # Get style-aware system prompt
+        style = getattr(options, 'style_preset', StylePreset.STANDARD)
+        
         response = client.messages.create(
             model=os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307"),
             max_tokens=2048,
-            system=get_system_prompt(),
+            system=get_system_prompt(style),
             messages=[{"role": "user", "content": prompt}],
         )
         
@@ -156,12 +162,10 @@ def try_anthropic_generation(
         return None
 
 
-def get_system_prompt() -> str:
-    """System prompt for script generation."""
-    return """You are a TikTok-style educational content creator. Generate engaging, 
-punchy study video scripts that capture attention and deliver key learnings fast.
-
-Your output MUST be valid JSON matching this exact structure:
+def get_system_prompt(style_preset: StylePreset = StylePreset.STANDARD) -> str:
+    """System prompt for script generation, customized by style preset."""
+    
+    base_schema = """Your output MUST be valid JSON matching this exact structure:
 {
     "title": "string - catchy video title",
     "hook": "string - attention-grabbing first line",
@@ -188,6 +192,58 @@ Your output MUST be valid JSON matching this exact structure:
 Keep narration punchy and conversational. Use emphasis words that should pop on screen.
 Visual cues should be specific, searchable terms for stock images."""
 
+    style_instructions = {
+        StylePreset.STANDARD: """You are a TikTok-style educational content creator. Generate engaging, 
+punchy study video scripts that capture attention and deliver key learnings fast.
+Keep your tone clear, friendly, and educational.""",
+        
+        StylePreset.UNHINGED: """You are a CHAOTIC Gen-Z educational content creator with ZERO chill.
+Generate absolutely UNHINGED study scripts that are:
+- Packed with memes, internet slang, and dramatic exaggerations
+- Use phrases like "actually insane", "no cap", "fr fr", "lowkey", "highkey", "slay"
+- React dramatically to every fact like it just personally attacked you
+- Sound like you're telling your bestie the craziest tea ever
+- Use ALL CAPS for emphasis
+- Add chaotic energy transitions like "OKAY BUT WAIT" and "HOLD UP THO"
+Make learning feel like scrolling through the most unhinged group chat.""",
+        
+        StylePreset.ASMR: """You are a calming ASMR-style educational content creator.
+Generate soothing, whisper-worthy study scripts that are:
+- Soft, gentle, and peaceful in tone
+- Use calming language and smooth transitions
+- Include sensory words and relaxing phrasing
+- Perfect for late-night study sessions
+- Sound like a gentle friend helping you understand
+- Avoid jarring words or sudden tone changes
+Make learning feel like a cozy, relaxing experience.""",
+        
+        StylePreset.GOSSIP: """You are a DRAMATIC storyteller who treats every fact like HOT TEA.
+Generate gossip-style study scripts that are:
+- Full of dramatic pauses and reveals ("And guess what happened NEXT...") 
+- Treat historical figures and concepts like celebrities
+- Use phrases like "spill the tea", "the drama", "iconic", "the gag is"
+- Make facts sound like juicy secrets being shared
+- Add dramatic commentary ("I mean, can you BELIEVE?!")
+- Build suspense before revealing key information
+Make learning feel like catching up on the hottest gossip.""",
+        
+        StylePreset.PROFESSOR: """You are an authoritative but engaging university professor.
+Generate academic-style study scripts that are:
+- Formal yet accessible and engaging
+- Use precise, scholarly language
+- Reference the broader context and implications
+- Include phrases like "It's important to note...", "Research demonstrates..."
+- Sound knowledgeable and confident
+- Provide depth while remaining concise
+Make learning feel like attending an excellent lecture.""",
+    }
+    
+    style_intro = style_instructions.get(style_preset, style_instructions[StylePreset.STANDARD])
+    
+    return f"""{style_intro}
+
+{base_schema}"""
+
 
 def build_script_prompt(
     topic: Optional[str],
@@ -198,9 +254,25 @@ def build_script_prompt(
     """Build the prompt for script generation."""
     parts = []
     
+    # Get duration from Duration enum if available
+    duration = options.length_sec
+    if hasattr(options, 'duration') and options.duration:
+        duration_map = {
+            Duration.QUICK: 35,      # Middle of 20-45
+            Duration.STANDARD: 60,   # Middle of 45-80 
+            Duration.EXTENDED: 150,  # 2.5 minutes
+            Duration.CUSTOM: options.length_sec,
+        }
+        duration = duration_map.get(options.duration, options.length_sec)
+    
     # Target parameters
-    parts.append(f"Create a {options.length_sec}-second study video script.")
-    parts.append(f"Style preset: {options.preset.value}")
+    parts.append(f"Create a {duration}-second study video script.")
+    parts.append(f"Pacing preset: {options.preset.value}")
+    
+    # Add style preset instruction if available
+    if hasattr(options, 'style_preset') and options.style_preset:
+        parts.append(f"Style: {options.style_preset.value} - Follow the style instructions EXACTLY.")
+    
     parts.append(f"Caption style: {options.caption_style.value}")
     
     if topic:

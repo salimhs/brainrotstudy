@@ -30,6 +30,7 @@ type JobState = "idle" | "uploading" | "processing" | "completed" | "error";
 interface JobOptions {
   length_sec: number;
   preset: string;
+  style_preset: string;
   caption_style: string;
   voice_id: string;
   export_extras: boolean;
@@ -45,6 +46,7 @@ export default function Home() {
   const [options, setOptions] = useState<JobOptions>({
     length_sec: 60,
     preset: "BALANCED",
+    style_preset: "STANDARD",
     caption_style: "BOLD",
     voice_id: "default",
     export_extras: false,
@@ -389,6 +391,26 @@ export default function Home() {
                                   <SelectItem value="FAST">Fast - Quick cuts, high energy</SelectItem>
                                   <SelectItem value="BALANCED">Balanced - Medium pacing</SelectItem>
                                   <SelectItem value="EXAM">Exam - Slower, clear explanations</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            {/* Personality Style */}
+                            <div>
+                              <Label>Personality Style</Label>
+                              <Select
+                                value={options.style_preset}
+                                onValueChange={(v) => setOptions({ ...options, style_preset: v })}
+                              >
+                                <SelectTrigger className="mt-2">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="STANDARD">📚 Standard - Clear & educational</SelectItem>
+                                  <SelectItem value="UNHINGED">🔥 UNHINGED - Gen-Z chaos mode</SelectItem>
+                                  <SelectItem value="ASMR">🎧 ASMR - Whispered & calming</SelectItem>
+                                  <SelectItem value="GOSSIP">☕ Gossip - Dramatic storytelling</SelectItem>
+                                  <SelectItem value="PROFESSOR">🎓 Professor - Academic lecture</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>

@@ -173,6 +173,62 @@ def try_openverse(query: str, save_path: Path, logger) -> Optional[AssetItem]:
     except Exception as e:
         logger.debug(f"Openverse fetch failed: {e}")
     
+    # Try Pexels as fallback
+    pexels_asset = try_pexels(query, save_path, logger)
+    if pexels_asset:
+        return pexels_asset
+    
+    return None
+
+
+def try_pexels(query: str, save_path: Path, logger) -> Optional[AssetItem]:
+    """Try to fetch an image from Pexels API."""
+    pexels_key = os.getenv("PEXELS_API_KEY")
+    if not pexels_key:
+        return None
+    
+    try:
+        import requests
+        
+        # Pexels API
+        api_url = "https://api.pexels.com/v1/search"
+        headers = {"Authorization": pexels_key}
+        params = {
+            "query": query,
+            "per_page": 1,
+            "orientation": "portrait",  # Better for vertical videos
+        }
+        
+        response = requests.get(api_url, headers=headers, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("photos"):
+                photo = data["photos"][0]
+                image_url = photo["src"]["large"]  # Use large size
+                
+                # Download image
+                img_response = requests.get(image_url, timeout=15)
+                if img_response.status_code == 200:
+                    with open(save_path, "wb") as f:
+                        f.write(img_response.content)
+                    
+                    logger.info(f"Downloaded image from Pexels: {query}")
+                    
+                    return AssetItem(
+                        id="",
+                        type="image",
+                        path=f"assets/{save_path.name}",
+                        source_url=photo["url"],
+                        title=photo.get("alt", query),
+                        author=photo["photographer"],
+                        license="Pexels License",
+                        attribution=f"Photo by {photo['photographer']} on Pexels",
+                    )
+        
+    except Exception as e:
+        logger.debug(f"Pexels fetch failed: {e}")
+    
     return None
 
 

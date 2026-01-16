@@ -55,7 +55,9 @@ def run_script_stage(job_id: str) -> None:
     script = None
     llm_provider = os.getenv("LLM_PROVIDER", "openai")
     
-    if os.getenv("OPENAI_API_KEY") and llm_provider == "openai":
+    if os.getenv("GOOGLE_API_KEY") and llm_provider == "gemini":
+        script = try_gemini_generation(job_id, topic, outline, slides, metadata.options)
+    elif os.getenv("OPENAI_API_KEY") and llm_provider == "openai":
         script = try_openai_generation(job_id, topic, outline, slides, metadata.options)
     elif os.getenv("ANTHROPIC_API_KEY") and llm_provider == "anthropic":
         script = try_anthropic_generation(job_id, topic, outline, slides, metadata.options)
@@ -159,6 +161,49 @@ def try_anthropic_generation(
         
     except Exception as e:
         logger.error(f"Anthropic generation failed: {e}")
+        return None
+
+
+def try_gemini_generation(
+    job_id: str,
+    topic: Optional[str],
+    outline: Optional[str],
+    slides: Optional[SlidesExtracted],
+    options
+) -> Optional[ScriptPlan]:
+    """Try to generate script using Google Gemini API."""
+    logger = get_job_logger(job_id)
+    
+    try:
+        import google.generativeai as genai
+        
+        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+        
+        model = genai.GenerativeModel(
+            model_name=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+            generation_config={
+                "response_mime_type": "application/json",
+                "temperature": 0.8 if getattr(options, 'style_preset', StylePreset.STANDARD) == StylePreset.UNHINGED else 0.7,
+            }
+        )
+        
+        prompt = build_script_prompt(topic, outline, slides, options)
+        
+        # Get style-aware system prompt
+        style = getattr(options, 'style_preset', StylePreset.STANDARD)
+        system_prompt = get_system_prompt(style)
+        
+        # Combine system and user prompts for Gemini
+        full_prompt = f"{system_prompt}\n\n{prompt}"
+        
+        response = model.generate_content(full_prompt)
+        
+        script_data = json.loads(response.text)
+        
+        return ScriptPlan.model_validate(script_data)
+        
+    except Exception as e:
+        logger.error(f"Gemini generation failed: {e}")
         return None
 
 

@@ -1,76 +1,41 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-
-  // Enable React strict mode for better debugging
+  compress: true,
+  poweredByHeader: false,
   reactStrictMode: true,
-
-  // Optimize images
+  swcMinify: true,
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '100mb',
+    },
+  },
   images: {
     formats: ['image/avif', 'image/webp'],
-    deviceSizes: [640, 750, 828, 1080, 1200],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256],
-    minimumCacheTTL: 60 * 60 * 24, // 24 hours
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
-
-  // Compression
-  compress: true,
-
-  // Optimize production builds
-  swcMinify: true,
-
-  // Generate source maps only in development
-  productionBrowserSourceMaps: false,
-
-  // Optimize fonts
-  optimizeFonts: true,
-
-  // Configure headers for caching and security
   async headers() {
     return [
-      {
-        source: '/:all*(svg|jpg|jpeg|png|gif|ico|webp|avif)',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
-          },
-        ],
-      },
-      {
-        source: '/_next/static/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
-          },
-        ],
-      },
       {
         source: '/:path*',
         headers: [
           {
             key: 'X-DNS-Prefetch-Control',
-            value: 'on',
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
+            value: 'on'
           },
           {
             key: 'X-Frame-Options',
-            value: 'DENY',
+            value: 'SAMEORIGIN'
           },
           {
-            key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin',
+            key: 'X-Content-Type-Options',
+            value: 'nosniff'
           },
         ],
       },
     ];
   },
-
-  // API rewrites
   async rewrites() {
     return [
       {
@@ -78,15 +43,6 @@ const nextConfig = {
         destination: process.env.API_URL ? `${process.env.API_URL}/:path*` : 'http://localhost:8000/:path*',
       },
     ];
-  },
-
-  // Experimental features
-  experimental: {
-    // Optimize package imports for smaller bundles
-    optimizePackageImports: ['lucide-react', 'framer-motion'],
-    serverActions: {
-      bodySizeLimit: '100mb',
-    },
   },
 };
 

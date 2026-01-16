@@ -4,17 +4,15 @@ import asyncio
 import json
 import os
 import shutil
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-import logging
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 import sys
@@ -38,48 +36,15 @@ from shared.utils import (
     create_sse_event,
 )
 
-# Configure logging for observability
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger("brainrotstudy.api")
 
 app = FastAPI(
     title="BrainRotStudy API",
-    description="API for generating TikTok-style study videos from documents, topics, or URLs",
-    version="2.0.0",
+    description="API for generating TikTok-style study videos from PDFs, slides, or topics",
+    version="1.0.0",
 )
 
-# Supported file extensions
-SUPPORTED_EXTENSIONS = {
-    ".pdf", ".pptx", ".docx",           # Documents
-    ".xlsx", ".xls", ".csv",            # Spreadsheets
-    ".txt", ".md", ".markdown",         # Text
-    ".png", ".jpg", ".jpeg", ".gif",    # Images
-}
-
-# Assets directory
-ASSETS_ROOT = Path(os.getenv("ASSETS_ROOT", "/app/assets"))
-
-# Add GZip compression middleware (min 500 bytes to compress)
-app.add_middleware(GZipMiddleware, minimum_size=500)
-
-
-# Request timing middleware for observability
-@app.middleware("http")
-async def add_timing_header(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = f"{process_time:.4f}"
-    
-    # Log slow requests (>1s)
-    if process_time > 1.0:
-        logger.warning(f"Slow request: {request.method} {request.url.path} took {process_time:.2f}s")
-    
-    return response
-
+# Add GZip compression middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # CORS for local development
 app.add_middleware(
@@ -139,12 +104,8 @@ async def create_job(
         
         # Validate file extension
         ext = Path(file.filename).suffix.lower()
-        if ext not in SUPPORTED_EXTENSIONS:
-            supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Unsupported file type '{ext}'. Supported: {supported}"
-            )
+        if ext not in [".pdf", ".pptx"]:
+            raise HTTPException(status_code=400, detail="Only PDF and PPTX files are supported")
         
         # Save uploaded file
         input_path = dirs["input"] / file.filename
@@ -392,111 +353,6 @@ async def delete_job(job_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete job: {str(e)}")
 
 
-# ============= Asset Management Endpoints =============
-
-@app.get("/assets/backgrounds")
-async def list_backgrounds():
-    """List available background video loops."""
-    bg_dir = ASSETS_ROOT / "bg_loops"
-    backgrounds = []
-    
-    if bg_dir.exists():
-        for file in bg_dir.iterdir():
-            if file.suffix.lower() in {".mp4", ".webm", ".mov"}:
-                backgrounds.append({
-                    "id": file.stem,
-                    "name": file.stem.replace("_", " ").title(),
-                    "filename": file.name,
-                    "path": f"bg_loops/{file.name}",
-                })
-    
-    return {
-        "backgrounds": backgrounds,
-        "total": len(backgrounds),
-    }
-
-
-@app.get("/assets/music")
-async def list_music():
-    """List available background music tracks."""
-    music_dir = ASSETS_ROOT / "music"
-    tracks = []
-    
-    if music_dir.exists():
-        for file in music_dir.iterdir():
-            if file.suffix.lower() in {".mp3", ".wav", ".ogg", ".m4a"}:
-                tracks.append({
-                    "id": file.stem,
-                    "name": file.stem.replace("_", " ").title(),
-                    "filename": file.name,
-                    "path": f"music/{file.name}",
-                })
-    
-    return {
-        "tracks": tracks,
-        "total": len(tracks),
-    }
-
-
-@app.get("/assets/styles")
-async def list_styles():
-    """List available style presets with descriptions."""
-    from shared.models import StylePreset, Duration, Preset
-    
-    styles = [
-        {
-            "id": StylePreset.STANDARD.value,
-            "name": "Standard",
-            "description": "Clear, educational tone with focused explanations",
-            "icon": "📚",
-        },
-        {
-            "id": StylePreset.UNHINGED.value,
-            "name": "Unhinged",
-            "description": "Chaotic Gen-Z energy, meme-heavy, no chill",
-            "icon": "🤪",
-        },
-        {
-            "id": StylePreset.ASMR.value,
-            "name": "ASMR",
-            "description": "Whispered, calming, soft-spoken narration",
-            "icon": "🎧",
-        },
-        {
-            "id": StylePreset.GOSSIP.value,
-            "name": "Gossip",
-            "description": "Dramatic storytelling, spilling the tea",
-            "icon": "☕",
-        },
-        {
-            "id": StylePreset.PROFESSOR.value,
-            "name": "Professor",
-            "description": "Academic, authoritative, lecture-style",
-            "icon": "🎓",
-        },
-    ]
-    
-    durations = [
-        {"id": Duration.QUICK.value, "name": "Quick", "range": "20-45 seconds", "icon": "⚡"},
-        {"id": Duration.STANDARD.value, "name": "Standard", "range": "45-80 seconds", "icon": "⏱️"},
-        {"id": Duration.EXTENDED.value, "name": "Extended", "range": "2+ minutes", "icon": "📖"},
-        {"id": Duration.CUSTOM.value, "name": "Custom", "range": "You choose", "icon": "🎚️"},
-    ]
-    
-    presets = [
-        {"id": Preset.FAST.value, "name": "Fast", "description": "Quick cuts, high energy"},
-        {"id": Preset.BALANCED.value, "name": "Balanced", "description": "Medium pacing"},
-        {"id": Preset.EXAM.value, "name": "Exam", "description": "Slower, clear explanations"},
-    ]
-    
-    return {
-        "styles": styles,
-        "durations": durations,
-        "presets": presets,
-    }
-
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

@@ -1,13 +1,14 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY apps/web/package*.json ./
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps --prefer-offline
 
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY apps/web/ .
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
 RUN npm run build
 
 FROM node:20-alpine AS runner

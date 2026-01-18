@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -75,11 +75,7 @@ async def health():
 
 
 @app.post("/jobs")
-async def create_job(
-    file: Optional[UploadFile] = File(None),
-    options: Optional[str] = Form(None),
-    body: Optional[JobCreate] = None,
-):
+async def create_job(request: Request):
     """
     Create a new video generation job.
     
@@ -87,78 +83,124 @@ async def create_job(
     - multipart/form-data with file upload and options JSON string
     - application/json with topic and options
     """
-    job_id = str(uuid.uuid4())[:8]
-    dirs = ensure_job_dirs(job_id)
-    
-    # Parse options
-    job_options = JobOptions()
-    topic = None
-    outline = None
-    input_type = "topic"
-    input_filename = None
-    
-    if file and file.filename:
-        # File upload mode
-        input_type = "file"
-        input_filename = file.filename
-        
-        # Validate file extension
-        ext = Path(file.filename).suffix.lower()
-        if ext not in [".pdf", ".pptx"]:
-            raise HTTPException(status_code=400, detail="Only PDF and PPTX files are supported")
-        
-        # Save uploaded file
-        input_path = dirs["input"] / file.filename
-        with open(input_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        
-        # Parse options from form data
-        if options:
-            try:
-                opts_dict = json.loads(options)
-                job_options = JobOptions.model_validate(opts_dict)
-            except Exception:
-                pass
-    
-    elif body:
-        # JSON body mode (topic-only)
-        topic = body.topic
-        outline = body.outline
-        job_options = body.options
-        
-        if not topic:
-            raise HTTPException(status_code=400, detail="Topic is required for topic-only jobs")
-        
-        # Save topic and outline to input dir
-        topic_path = dirs["input"] / "topic.json"
-        with open(topic_path, "w") as f:
-            json.dump({"topic": topic, "outline": outline}, f, indent=2)
-    
-    else:
-        raise HTTPException(status_code=400, detail="Either file upload or topic is required")
-    
-    # Create job metadata
-    title = topic if topic else (input_filename or "Untitled")
-    metadata = JobMetadata(
-        job_id=job_id,
-        status=JobStatus.QUEUED,
-        title=title,
-        input_type=input_type,
-        input_filename=input_filename,
-        options=job_options,
-    )
-    save_job_metadata(metadata)
-    
-    # Enqueue Celery task
     try:
-        celery = get_celery()
-        celery.send_task("worker.tasks.process_job", args=[job_id])
-    except Exception as e:
-        # Log but don't fail - worker might process from metadata
-        print(f"Warning: Could not enqueue Celery task: {e}")
+        job_id = str(uuid.uuid4())[:8]
+        dirs = ensure_job_dirs(job_id)
+        
+        # Parse options
+        job_options = JobOptions()
+        topic = None
+        outline = None
+        input_type = "topic"
+        input_filename = None
+        file = None
+        
+        # Check Content-Type to determine how to parse the request
+        content_type = request.headers.get("content-type", "")
+        
+        if "multipart/form-data" in content_type:
+            # File upload mode
+            try:
+                form = await request.form()
+                file = form.get("file")
+                options_str = form.get("options")
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to parse form data: {str(e)}")
+            
+            if file and hasattr(file, 'filename') and file.filename:
+                input_type = "file"
+                input_filename = file.filename
+                
+                # Validate file extension
+                ext = Path(file.filename).suffix.lower()
+                if ext not in [".pdf", ".pptx"]:
+                    raise HTTPException(status_code=400, detail="Only PDF and PPTX files are supported")
+                
+                # Validate file size (max 100MB)
+                file_content = await file.read()
+                if len(file_content) > 100 * 1024 * 1024:
+                    raise HTTPException(status_code=400, detail="File size exceeds 100MB limit")
+                
+                # Save uploaded file
+                try:
+                    input_path = dirs["input"] / file.filename
+                    with open(input_path, "wb") as f:
+                        f.write(file_content)
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {str(e)}")
+                
+                # Parse options from form data
+                if options_str:
+                    try:
+                        opts_dict = json.loads(options_str)
+                        job_options = JobOptions.model_validate(opts_dict)
+                    except json.JSONDecodeError as e:
+                        print(f"Warning: Invalid options JSON, using defaults: {e}")
+                    except Exception as e:
+                        print(f"Warning: Failed to validate options, using defaults: {e}")
+            else:
+                raise HTTPException(status_code=400, detail="File is required for multipart upload")
+        
+        elif "application/json" in content_type:
+            # JSON body mode (topic-only)
+            try:
+                body_data = await request.json()
+                body = JobCreate.model_validate(body_data)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON body: {str(e)}")
+            
+            topic = body.topic
+            outline = body.outline
+            job_options = body.options
+            
+            if not topic:
+                raise HTTPException(status_code=400, detail="Topic is required for topic-only jobs")
+            
+            # Save topic and outline to input dir
+            try:
+                topic_path = dirs["input"] / "topic.json"
+                with open(topic_path, "w") as f:
+                    json.dump({"topic": topic, "outline": outline}, f, indent=2)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to save topic data: {str(e)}")
+        
+        else:
+            raise HTTPException(status_code=400, detail="Content-Type must be multipart/form-data or application/json")
+        
+        # Create job metadata
+        title = topic if topic else (input_filename or "Untitled")
+        try:
+            metadata = JobMetadata(
+                job_id=job_id,
+                status=JobStatus.QUEUED,
+                title=title,
+                input_type=input_type,
+                input_filename=input_filename,
+                options=job_options,
+            )
+            save_job_metadata(metadata)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save job metadata: {str(e)}")
+        
+        # Enqueue Celery task
+        try:
+            celery = get_celery()
+            celery.send_task("worker.tasks.process_job", args=[job_id])
+        except Exception as e:
+            # Log but don't fail - worker might process from metadata
+            print(f"Warning: Could not enqueue Celery task: {e}")
+        
+        return {"job_id": job_id}
     
-    return {"job_id": job_id}
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        # Catch any unexpected errors
+        print(f"Unexpected error in create_job: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @app.get("/jobs/{job_id}")

@@ -82,6 +82,42 @@ def run_script_stage(job_id: str) -> None:
     logger.info(f"Generated script with {len(script.script_lines)} lines")
 
 
+def clean_json_response(text: str) -> str:
+    """
+    Clean and extract JSON from LLM response text.
+    Handles markdown code blocks, BOM, and other formatting issues.
+    """
+    text = text.strip()
+    
+    # Remove BOM if present
+    if text.startswith('\ufeff'):
+        text = text[1:]
+    
+    # Extract from markdown code blocks
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+        # Try to find JSON-like content in any code block
+        parts = text.split("```")
+        for part in parts:
+            part = part.strip()
+            if part.startswith("{") or part.startswith("["):
+                text = part
+                break
+    
+    # Remove any leading/trailing whitespace and control characters
+    text = text.strip()
+    
+    # Find the first { and last } to extract just the JSON object
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        text = text[first_brace:last_brace + 1]
+    
+    return text
+
+
 def try_openai_generation(
     job_id: str, 
     topic: Optional[str], 
@@ -149,14 +185,11 @@ def try_anthropic_generation(
             messages=[{"role": "user", "content": prompt}],
         )
         
-        result = response.content[0].text
-        # Extract JSON from response
-        if "```json" in result:
-            result = result.split("```json")[1].split("```")[0]
-        elif "```" in result:
-            result = result.split("```")[1].split("```")[0]
+        # Extract and clean the response text using helper function
+        response_text = clean_json_response(response.content[0].text)
         
-        script_data = json.loads(result)
+        # Parse JSON
+        script_data = json.loads(response_text)
         return ScriptPlan.model_validate(script_data)
         
     except Exception as e:
@@ -198,12 +231,26 @@ def try_gemini_generation(
         
         response = model.generate_content(full_prompt)
         
-        script_data = json.loads(response.text)
+        # Extract and clean the response text using helper function
+        response_text = clean_json_response(response.text)
+        
+        # Log the response for debugging
+        logger.info(f"Gemini response length: {len(response_text)} chars")
+        
+        # Parse JSON
+        try:
+            script_data = json.loads(response_text)
+        except json.JSONDecodeError as json_err:
+            logger.error(f"JSON parsing failed: {json_err}")
+            logger.error(f"Response text (first 500 chars): {response_text[:500]}")
+            return None
         
         return ScriptPlan.model_validate(script_data)
         
     except Exception as e:
         logger.error(f"Gemini generation failed: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return None
 
 

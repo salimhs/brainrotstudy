@@ -6,14 +6,14 @@ sys.path.insert(0, "/app")
 from shared.models import JobStage
 from shared.utils import update_job_status, get_job_logger, load_job_metadata
 
-from worker.stages.extract import run_extract_stage
-from worker.stages.script import run_script_stage
-from worker.stages.timeline import run_timeline_stage
-from worker.stages.assets import run_assets_stage
-from worker.stages.voice import run_voice_stage
-from worker.stages.captions import run_captions_stage
-from worker.stages.render import run_render_stage
-from worker.stages.finalize import run_finalize_stage
+from stages.extract import run_extract_stage
+from stages.script import run_script_stage
+from stages.timeline import run_timeline_stage
+from stages.assets import run_assets_stage
+from stages.voice import run_voice_stage
+from stages.captions import run_captions_stage
+from stages.render import run_render_stage
+from stages.finalize import run_finalize_stage
 
 
 def run_pipeline(job_id: str):

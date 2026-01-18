@@ -3,8 +3,8 @@
 import sys
 sys.path.insert(0, "/app")
 
-from worker.celery_app import app
-from worker.pipeline import run_pipeline
+from celery_app import app
+from pipeline import run_pipeline
 from shared.models import JobStatus, JobStage
 from shared.utils import update_job_status, get_job_logger
 

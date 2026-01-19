@@ -7,6 +7,7 @@ import uuid
 import hashlib
 from pathlib import Path
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, "/app")
 
@@ -14,6 +15,30 @@ from shared.models import (
     ScriptPlan, AssetsManifest, AssetItem, SlidesExtracted
 )
 from shared.utils import get_job_dir, get_job_logger
+
+# Module-level HTTP session for connection pooling
+_http_session = None
+
+
+def _get_session():
+    """Get or create a reusable HTTP session with connection pooling."""
+    global _http_session
+    if _http_session is None:
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+
+        _http_session = requests.Session()
+        # Configure retry strategy
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=20)
+        _http_session.mount("https://", adapter)
+        _http_session.mount("http://", adapter)
+    return _http_session
 
 
 def run_assets_stage(job_id: str) -> None:
@@ -53,14 +78,21 @@ def run_assets_stage(job_id: str) -> None:
     
     manifest = AssetsManifest(items=[])
     
-    # Process visual cues
+    # Process visual cues in parallel for faster fetching
     if script and script.visual_cues:
-        for cue in script.visual_cues:
-            asset = fetch_asset_for_cue(
-                job_id, cue.query, cue.t, slides, assets_dir, logger
-            )
-            if asset:
-                manifest.items.append(asset)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(
+                    fetch_asset_for_cue, job_id, cue.query, cue.t, slides, assets_dir, logger
+                ): cue for cue in script.visual_cues
+            }
+            for future in as_completed(futures):
+                try:
+                    asset = future.result()
+                    if asset:
+                        manifest.items.append(asset)
+                except Exception as e:
+                    logger.warning(f"Asset fetch failed: {e}")
     
     # Add background video selection
     bg_asset = select_background_video(job_id, script, logger)
@@ -127,8 +159,8 @@ def fetch_asset_for_cue(
 def try_openverse(query: str, save_path: Path, logger) -> Optional[AssetItem]:
     """Try to fetch an image from Openverse API."""
     try:
-        import requests
-        
+        session = _get_session()
+
         # Openverse API
         api_url = "https://api.openverse.org/v1/images/"
         params = {
@@ -136,29 +168,29 @@ def try_openverse(query: str, save_path: Path, logger) -> Optional[AssetItem]:
             "license_type": "all-cc",
             "page_size": 1,
         }
-        
+
         headers = {}
         openverse_token = os.getenv("OPENVERSE_API_TOKEN")
         if openverse_token:
             headers["Authorization"] = f"Bearer {openverse_token}"
-        
-        response = requests.get(api_url, params=params, headers=headers, timeout=10)
-        
+
+        response = session.get(api_url, params=params, headers=headers, timeout=10)
+
         if response.status_code == 200:
             data = response.json()
             if data.get("results"):
                 result = data["results"][0]
                 image_url = result.get("url")
-                
+
                 if image_url:
-                    # Download image
-                    img_response = requests.get(image_url, timeout=15)
+                    # Download image using pooled session
+                    img_response = session.get(image_url, timeout=15)
                     if img_response.status_code == 200:
                         with open(save_path, "wb") as f:
                             f.write(img_response.content)
-                        
+
                         logger.info(f"Downloaded image from Openverse: {query}")
-                        
+
                         return AssetItem(
                             id="",
                             type="image",
@@ -169,7 +201,7 @@ def try_openverse(query: str, save_path: Path, logger) -> Optional[AssetItem]:
                             license=result.get("license", "CC"),
                             attribution=f"{result.get('title', '')} by {result.get('creator', 'Unknown')} ({result.get('license', 'CC')})",
                         )
-        
+
     except Exception as e:
         logger.debug(f"Openverse fetch failed: {e}")
     
@@ -186,10 +218,10 @@ def try_pexels(query: str, save_path: Path, logger) -> Optional[AssetItem]:
     pexels_key = os.getenv("PEXELS_API_KEY")
     if not pexels_key:
         return None
-    
+
     try:
-        import requests
-        
+        session = _get_session()
+
         # Pexels API
         api_url = "https://api.pexels.com/v1/search"
         headers = {"Authorization": pexels_key}
@@ -198,23 +230,23 @@ def try_pexels(query: str, save_path: Path, logger) -> Optional[AssetItem]:
             "per_page": 1,
             "orientation": "portrait",  # Better for vertical videos
         }
-        
-        response = requests.get(api_url, headers=headers, params=params, timeout=10)
-        
+
+        response = session.get(api_url, headers=headers, params=params, timeout=10)
+
         if response.status_code == 200:
             data = response.json()
             if data.get("photos"):
                 photo = data["photos"][0]
                 image_url = photo["src"]["large"]  # Use large size
-                
-                # Download image
-                img_response = requests.get(image_url, timeout=15)
+
+                # Download image using pooled session
+                img_response = session.get(image_url, timeout=15)
                 if img_response.status_code == 200:
                     with open(save_path, "wb") as f:
                         f.write(img_response.content)
-                    
+
                     logger.info(f"Downloaded image from Pexels: {query}")
-                    
+
                     return AssetItem(
                         id="",
                         type="image",
@@ -225,10 +257,10 @@ def try_pexels(query: str, save_path: Path, logger) -> Optional[AssetItem]:
                         license="Pexels License",
                         attribution=f"Photo by {photo['photographer']} on Pexels",
                     )
-        
+
     except Exception as e:
         logger.debug(f"Pexels fetch failed: {e}")
-    
+
     return None
 
 
@@ -236,18 +268,24 @@ def generate_title_card(text: str, save_path: Path, logger) -> Optional[AssetIte
     """Generate a simple title card image as fallback."""
     try:
         from PIL import Image, ImageDraw, ImageFont
-        
+        import numpy as np
+
         # Create gradient background
         width, height = 1080, 960  # Top half of vertical video
-        img = Image.new('RGB', (width, height))
-        
-        # Simple gradient
-        for y in range(height):
-            r = int(30 + (y / height) * 20)
-            g = int(30 + (y / height) * 30)
-            b = int(60 + (y / height) * 40)
-            for x in range(width):
-                img.putpixel((x, y), (r, g, b))
+
+        # Optimized gradient using numpy (vectorized, ~100x faster than pixel loop)
+        y_indices = np.linspace(0, 1, height).reshape(height, 1)
+        r = (30 + y_indices * 20).astype(np.uint8)
+        g = (30 + y_indices * 30).astype(np.uint8)
+        b = (60 + y_indices * 40).astype(np.uint8)
+
+        # Broadcast to full width and stack RGB channels
+        gradient = np.zeros((height, width, 3), dtype=np.uint8)
+        gradient[:, :, 0] = np.broadcast_to(r, (height, width))
+        gradient[:, :, 1] = np.broadcast_to(g, (height, width))
+        gradient[:, :, 2] = np.broadcast_to(b, (height, width))
+
+        img = Image.fromarray(gradient, 'RGB')
         
         draw = ImageDraw.Draw(img)
         

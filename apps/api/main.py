@@ -61,11 +61,17 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 # In-memory SSE subscribers (for simple single-instance setup)
 job_subscribers: dict[str, list[asyncio.Queue]] = {}
 
+# Cached Celery app instance
+_celery_app = None
+
 
 def get_celery():
-    """Lazy import Celery to avoid circular imports."""
-    from celery import Celery
-    return Celery("worker", broker=REDIS_URL, backend=REDIS_URL)
+    """Get cached Celery app instance (lazy initialization)."""
+    global _celery_app
+    if _celery_app is None:
+        from celery import Celery
+        _celery_app = Celery("worker", broker=REDIS_URL, backend=REDIS_URL)
+    return _celery_app
 
 
 @app.get("/health")

@@ -37,35 +37,14 @@ export function ProgressUI({ jobId, onComplete, onError }: ProgressUIProps) {
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Start SSE connection
-    const connectSSE = () => {
-      const eventSource = new EventSource(`/api/jobs/${jobId}/events`);
-      eventSourceRef.current = eventSource;
+    let sseActive = false;
+    let sseFailCount = 0;
+    const MAX_SSE_FAILURES = 3;
 
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          setCurrentStage(data.stage || "extract");
-          setProgress(data.progress_pct || 0);
-          if (data.log_tail) {
-            setLogLines(data.log_tail);
-          }
-        } catch (e) {
-          console.error("Failed to parse SSE event:", e);
-        }
-      };
-
-      eventSource.onerror = () => {
-        eventSource.close();
-        // Fallback to polling
-        startPolling();
-      };
-    };
-
-    // Fallback polling
+    // Fallback polling - only starts if SSE fails
     const startPolling = () => {
       if (pollIntervalRef.current) return;
-      
+
       pollIntervalRef.current = setInterval(async () => {
         try {
           const response = await fetch(`/api/jobs/${jobId}`);
@@ -93,10 +72,59 @@ export function ProgressUI({ jobId, onComplete, onError }: ProgressUIProps) {
       }, 2000);
     };
 
-    connectSSE();
+    // Start SSE connection
+    const connectSSE = () => {
+      const eventSource = new EventSource(`/api/jobs/${jobId}/events`);
+      eventSourceRef.current = eventSource;
 
-    // Also start polling as backup
-    setTimeout(startPolling, 5000);
+      eventSource.onopen = () => {
+        sseActive = true;
+        sseFailCount = 0;
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          setCurrentStage(data.stage || "extract");
+          setProgress(data.progress_pct || 0);
+          if (data.log_tail) {
+            setLogLines(data.log_tail);
+          }
+
+          // Check for completion via SSE
+          if (data.message?.includes("succeeded")) {
+            eventSource.close();
+            // Final status check
+            fetch(`/api/jobs/${jobId}`)
+              .then((res) => res.json())
+              .then((finalData) => onComplete(finalData))
+              .catch(() => onComplete({ status: "succeeded", progress_pct: 100 }));
+          } else if (data.message?.includes("failed")) {
+            eventSource.close();
+            onError("Job failed");
+          }
+        } catch (e) {
+          console.error("Failed to parse SSE event:", e);
+        }
+      };
+
+      eventSource.onerror = () => {
+        sseFailCount++;
+        eventSource.close();
+        sseActive = false;
+
+        // Only fallback to polling after multiple SSE failures
+        if (sseFailCount >= MAX_SSE_FAILURES) {
+          console.log("SSE failed, falling back to polling");
+          startPolling();
+        } else {
+          // Try reconnecting SSE after a delay
+          setTimeout(connectSSE, 2000);
+        }
+      };
+    };
+
+    connectSSE();
 
     return () => {
       if (eventSourceRef.current) {

@@ -3,6 +3,8 @@
 import json
 import logging
 import os
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -12,6 +14,12 @@ from shared.models import JobMetadata, JobStatus, JobStage, SSEEvent, utc_now
 
 # Storage root directory
 STORAGE_ROOT = os.getenv("STORAGE_ROOT", "/app/storage")
+
+# In-memory cache for job metadata to reduce file I/O
+# Format: {job_id: (metadata, timestamp)}
+_metadata_cache: dict[str, tuple[JobMetadata, float]] = {}
+_cache_lock = threading.Lock()
+_CACHE_TTL_SECONDS = 2.0  # Cache entries expire after 2 seconds
 
 
 def get_job_dir(job_id: str) -> Path:
@@ -43,27 +51,46 @@ def ensure_job_dirs(job_id: str) -> dict[str, Path]:
     return dirs
 
 
-def load_job_metadata(job_id: str) -> Optional[JobMetadata]:
-    """Load job metadata from disk."""
+def load_job_metadata(job_id: str, use_cache: bool = True) -> Optional[JobMetadata]:
+    """Load job metadata from disk with optional caching."""
+    # Check cache first (thread-safe)
+    if use_cache:
+        with _cache_lock:
+            if job_id in _metadata_cache:
+                cached_meta, cached_time = _metadata_cache[job_id]
+                if time.time() - cached_time < _CACHE_TTL_SECONDS:
+                    return cached_meta
+
     meta_path = get_job_dir(job_id) / "metadata.json"
     if not meta_path.exists():
         return None
     try:
         with open(meta_path, "r") as f:
             data = json.load(f)
-        return JobMetadata.model_validate(data)
+        metadata = JobMetadata.model_validate(data)
+
+        # Update cache (thread-safe)
+        if use_cache:
+            with _cache_lock:
+                _metadata_cache[job_id] = (metadata, time.time())
+
+        return metadata
     except Exception:
         return None
 
 
 def save_job_metadata(metadata: JobMetadata) -> None:
-    """Save job metadata to disk."""
+    """Save job metadata to disk and update cache."""
     job_dir = get_job_dir(metadata.job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
     meta_path = job_dir / "metadata.json"
     metadata.updated_at = utc_now()
     with open(meta_path, "w") as f:
         json.dump(metadata.model_dump(mode="json"), f, indent=2, default=str)
+
+    # Update cache with new metadata (thread-safe)
+    with _cache_lock:
+        _metadata_cache[metadata.job_id] = (metadata, time.time())
 
 
 def update_job_status(

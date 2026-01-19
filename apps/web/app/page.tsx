@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, FileText, Sparkles, History, Check, X, Download, Play } from "lucide-react";
@@ -150,12 +150,12 @@ export default function Home() {
     setJobData(null);
   };
 
-  const exampleTopics = [
+  const exampleTopics = useMemo(() => [
     "Intro to linear regression",
     "Photosynthesis for MCAT",
     "French Revolution summary",
     "Python list comprehensions",
-  ];
+  ], []);
 
   return (
     <div className="min-h-screen bg-background">

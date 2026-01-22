@@ -59,7 +59,10 @@ def run_finalize_stage(job_id: str) -> None:
     srt_source = job_dir / "captions" / "captions.srt"
     if srt_source.exists():
         shutil.copy(srt_source, output_dir / "captions.srt")
-    
+
+    # Cleanup intermediate artifacts to save disk space
+    cleanup_artifacts(job_id, logger)
+
     logger.info("Finalization completed")
 
 
@@ -315,6 +318,39 @@ def try_anthropic_summary(
     except Exception as e:
         logger.debug(f"Anthropic summary failed: {e}")
         return None
+
+
+def cleanup_artifacts(job_id: str, logger) -> None:
+    """
+    Remove large intermediate files after finalization to save disk space.
+    Target ~50% storage reduction per job by removing video_raw.mp4 and other temp files.
+    """
+    job_dir = get_job_dir(job_id)
+    total_freed_mb = 0
+
+    # List of files/directories to remove
+    artifacts_to_remove = [
+        job_dir / "render" / "video_raw.mp4",  # Largest file (~90% of job size)
+        job_dir / "audio" / "temp.mp3",         # Temp audio files
+        job_dir / "audio" / "temp.wav",         # Temp audio files
+    ]
+
+    for artifact_path in artifacts_to_remove:
+        if artifact_path.exists():
+            try:
+                size_bytes = artifact_path.stat().st_size
+                size_mb = size_bytes / (1024 * 1024)
+
+                if artifact_path.is_file():
+                    artifact_path.unlink()
+                    logger.info(f"Cleaned up {artifact_path.name} ({size_mb:.1f} MB)")
+                    total_freed_mb += size_mb
+
+            except Exception as e:
+                logger.warning(f"Failed to clean up {artifact_path}: {e}")
+
+    if total_freed_mb > 0:
+        logger.info(f"Total storage freed: {total_freed_mb:.1f} MB")
 
 
 def build_summary_prompt(

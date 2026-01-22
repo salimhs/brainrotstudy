@@ -6,10 +6,14 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 
 from shared.models import JobMetadata, JobStatus, JobStage, SSEEvent, utc_now
+
+# Optional Redis client for pub/sub (lazy loaded)
+_redis_pubsub_client = None
 
 
 # Storage root directory
@@ -79,8 +83,22 @@ def load_job_metadata(job_id: str, use_cache: bool = True) -> Optional[JobMetada
         return None
 
 
+def get_redis_pubsub_client():
+    """Get Redis client for pub/sub (lazy initialization)."""
+    global _redis_pubsub_client
+    if _redis_pubsub_client is None:
+        try:
+            import redis
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            _redis_pubsub_client = redis.from_url(redis_url, decode_responses=True)
+        except Exception:
+            # Redis not available, pub/sub disabled
+            _redis_pubsub_client = False
+    return _redis_pubsub_client if _redis_pubsub_client else None
+
+
 def save_job_metadata(metadata: JobMetadata) -> None:
-    """Save job metadata to disk and update cache."""
+    """Save job metadata to disk, update cache, and publish to Redis."""
     job_dir = get_job_dir(metadata.job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
     meta_path = job_dir / "metadata.json"
@@ -91,6 +109,23 @@ def save_job_metadata(metadata: JobMetadata) -> None:
     # Update cache with new metadata (thread-safe)
     with _cache_lock:
         _metadata_cache[metadata.job_id] = (metadata, time.time())
+
+    # Publish metadata update to Redis pub/sub for real-time SSE updates
+    try:
+        redis_client = get_redis_pubsub_client()
+        if redis_client:
+            channel = f"job:{metadata.job_id}"
+            message = json.dumps({
+                "job_id": metadata.job_id,
+                "status": metadata.status.value,
+                "stage": metadata.stage.value if metadata.stage else None,
+                "progress_pct": metadata.progress_pct,
+                "error_message": metadata.error_message,
+            })
+            redis_client.publish(channel, message)
+    except Exception:
+        # Redis pub/sub failed, fall back to polling
+        pass
 
 
 def update_job_status(
@@ -121,29 +156,65 @@ def update_job_status(
     return metadata
 
 
+class JSONFormatter(logging.Formatter):
+    """Custom JSON formatter for structured logging."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_data = {
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+
+        # Add extra fields if present
+        if hasattr(record, "job_id"):
+            log_data["job_id"] = record.job_id
+        if hasattr(record, "stage"):
+            log_data["stage"] = record.stage
+
+        # Add exception info if present
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(log_data)
+
+
 def get_job_logger(job_id: str) -> logging.Logger:
-    """Get a logger that writes to the job's log file."""
+    """
+    Get a logger that writes structured JSON logs to the job's log file.
+    Uses rotating file handler to prevent unbounded log growth.
+    """
     logger = logging.getLogger(f"job.{job_id}")
     logger.setLevel(logging.DEBUG)
-    
+
     # File handler for job-specific log
     log_path = get_job_dir(job_id) / "logs" / "job.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Check if handler already exists
     for handler in logger.handlers:
-        if isinstance(handler, logging.FileHandler) and handler.baseFilename == str(log_path):
+        if isinstance(handler, RotatingFileHandler) and handler.baseFilename == str(log_path):
             return logger
-    
-    file_handler = logging.FileHandler(log_path)
-    file_handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+
+    # Use rotating file handler to prevent unbounded growth
+    # Max 10MB per file, keep 3 backups (30MB total per job)
+    file_handler = RotatingFileHandler(
+        log_path,
+        maxBytes=10 * 1024 * 1024,  # 10MB
+        backupCount=3,
+        encoding='utf-8'
     )
+    file_handler.setLevel(logging.DEBUG)
+
+    # Use JSON formatter for structured logging
+    formatter = JSONFormatter()
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
-    
+
+    # Add job_id as default extra field
+    logger = logging.LoggerAdapter(logger, {"job_id": job_id})
+
     return logger
 
 

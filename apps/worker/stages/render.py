@@ -190,10 +190,13 @@ def render_full_video(
         cmd.extend(["-map", video_stream.strip("[]")])
         cmd.extend(["-map", audio_stream.strip("[]")])
     
+    # Use configurable FFmpeg preset (veryfast is 20-30% faster than fast)
+    ffmpeg_preset = os.getenv("FFMPEG_PRESET", "veryfast")
+
     cmd.extend([
         "-t", str(duration),
         "-c:v", "libx264",
-        "-preset", "fast",
+        "-preset", ffmpeg_preset,
         "-crf", "23",
         "-c:a", "aac",
         "-b:a", "128k",
@@ -203,12 +206,29 @@ def render_full_video(
     ])
     
     logger.info(f"Running FFmpeg: {' '.join(cmd)}")
-    
-    result = subprocess.run(cmd, capture_output=True, timeout=600)
-    
+
+    # Stream stderr to log file instead of capturing in memory
+    ffmpeg_log = job_dir / "logs" / "ffmpeg_render.log"
+    ffmpeg_log.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(ffmpeg_log, "w") as log_file:
+        result = subprocess.run(
+            cmd,
+            stderr=log_file,
+            stdout=subprocess.DEVNULL,
+            timeout=600
+        )
+
     if result.returncode != 0:
-        logger.error(f"FFmpeg error: {result.stderr.decode()}")
-        raise RuntimeError(f"FFmpeg failed: {result.stderr.decode()[:500]}")
+        # Read last 500 chars from log file for error context
+        with open(ffmpeg_log, "r") as log_file:
+            log_file.seek(0, 2)  # Go to end
+            file_size = log_file.tell()
+            log_file.seek(max(0, file_size - 500))
+            error_tail = log_file.read()
+
+        logger.error(f"FFmpeg error (see {ffmpeg_log})")
+        raise RuntimeError(f"FFmpeg failed: {error_tail}")
 
 
 def render_simple_video(
@@ -256,12 +276,29 @@ def render_simple_video(
     ])
     
     logger.info(f"Running simple FFmpeg render")
-    
-    result = subprocess.run(cmd, capture_output=True, timeout=300)
-    
+
+    # Stream stderr to log file instead of capturing in memory
+    ffmpeg_log = job_dir / "logs" / "ffmpeg_simple.log"
+    ffmpeg_log.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(ffmpeg_log, "w") as log_file:
+        result = subprocess.run(
+            cmd,
+            stderr=log_file,
+            stdout=subprocess.DEVNULL,
+            timeout=300
+        )
+
     if result.returncode != 0:
-        logger.error(f"Simple render failed: {result.stderr.decode()}")
-        raise RuntimeError(f"Simple render failed: {result.stderr.decode()[:500]}")
+        # Read last 500 chars from log file for error context
+        with open(ffmpeg_log, "r") as log_file:
+            log_file.seek(0, 2)  # Go to end
+            file_size = log_file.tell()
+            log_file.seek(max(0, file_size - 500))
+            error_tail = log_file.read()
+
+        logger.error(f"Simple render failed (see {ffmpeg_log})")
+        raise RuntimeError(f"Simple render failed: {error_tail}")
 
 
 def get_subtitle_style(caption_style) -> str:

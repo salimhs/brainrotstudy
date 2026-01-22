@@ -26,4 +26,14 @@ WORKDIR /app/apps/worker
 # Set Python to run in unbuffered mode for better logging
 ENV PYTHONUNBUFFERED=1
 
-CMD ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=2", "--max-tasks-per-child=50", "--task-events"]
+# Worker configuration defaults (can be overridden via environment variables)
+ENV CELERY_CONCURRENCY=4
+ENV CELERY_MAX_TASKS_PER_CHILD=25
+ENV CELERY_POOL=prefork
+
+CMD celery -A celery_app worker \
+    --loglevel=info \
+    --concurrency=${CELERY_CONCURRENCY} \
+    --max-tasks-per-child=${CELERY_MAX_TASKS_PER_CHILD} \
+    --pool=${CELERY_POOL} \
+    --task-events

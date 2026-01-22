@@ -57,6 +57,10 @@ services:
       - CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP=True
       - CELERY_TASK_ACKS_LATE=True
       - CELERY_WORKER_PREFETCH_MULTIPLIER=1
+      - CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-4}
+      - CELERY_MAX_TASKS_PER_CHILD=${CELERY_MAX_TASKS_PER_CHILD:-25}
+      - CELERY_POOL=${CELERY_POOL:-prefork}
+      - FFMPEG_PRESET=${FFMPEG_PRESET:-veryfast}
     volumes:
       - ./storage:/app/storage
       - ./shared:/app/shared
@@ -79,6 +83,22 @@ services:
       - NODE_ENV=production
     depends_on:
       - api
+    restart: unless-stopped
+
+  cleanup:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      cache_from:
+        - brainrotstudy-worker:latest
+    command: ["python", "-u", "cleanup.py"]
+    environment:
+      - STORAGE_ROOT=/app/storage
+      - RETENTION_DAYS=7
+      - CLEANUP_INTERVAL_HOURS=6
+      - CLEANUP_MODE=loop
+    volumes:
+      - ./storage:/app/storage
     restart: unless-stopped
 
 volumes:

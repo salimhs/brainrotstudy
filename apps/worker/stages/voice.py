@@ -188,7 +188,8 @@ def convert_to_wav(input_path: Path, output_path: Path, logger) -> bool:
     """Convert audio file to WAV using FFmpeg."""
     try:
         import subprocess
-        
+
+        # Stream stderr to avoid memory usage
         result = subprocess.run([
             "ffmpeg", "-y",
             "-i", str(input_path),
@@ -196,16 +197,16 @@ def convert_to_wav(input_path: Path, output_path: Path, logger) -> bool:
             "-ar", "44100",
             "-ac", "1",
             str(output_path)
-        ], capture_output=True, timeout=60)
-        
+        ], stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, timeout=60, text=True)
+
         if result.returncode == 0:
             return True
         else:
-            logger.error(f"FFmpeg conversion failed: {result.stderr.decode()}")
-            
+            logger.error(f"FFmpeg conversion failed: {result.stderr[:500]}")
+
     except Exception as e:
         logger.error(f"Audio conversion failed: {e}")
-    
+
     return False
 
 
@@ -213,7 +214,8 @@ def create_silent_audio(output_path: Path, duration_sec: int, logger) -> bool:
     """Create silent audio file as fallback."""
     try:
         import subprocess
-        
+
+        # Stream stderr to avoid memory usage
         result = subprocess.run([
             "ffmpeg", "-y",
             "-f", "lavfi",
@@ -221,13 +223,13 @@ def create_silent_audio(output_path: Path, duration_sec: int, logger) -> bool:
             "-t", str(duration_sec),
             "-acodec", "pcm_s16le",
             str(output_path)
-        ], capture_output=True, timeout=30)
-        
+        ], stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, timeout=30, text=True)
+
         if result.returncode == 0:
             logger.info(f"Created silent audio: {duration_sec}s")
             return True
-            
+
     except Exception as e:
         logger.error(f"Silent audio creation failed: {e}")
-    
+
     return False

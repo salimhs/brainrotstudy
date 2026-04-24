@@ -19,9 +19,15 @@ build/
 .next/
 out/
 
-# Storage (keep structure, ignore content)
-storage/jobs/*
-!storage/jobs/.gitkeep
+# Storage (entire dir is runtime state)
+storage/
+
+# uv / virtualenv
+.venv/
+server/.venv/
+
+# package lock for Python (uv manages its own)
+uv.lock
 
 # IDE
 .idea/
@@ -48,3 +54,4 @@ coverage/
 *.bak
 *.tmp
 .cache
+web/tsconfig.tsbuildinfo

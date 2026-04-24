@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  @apply bg-bg text-white;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 20% 0%, hsl(292 91% 20% / 0.35), transparent 60%),
+    radial-gradient(900px 500px at 100% 100%, hsl(196 94% 25% / 0.25), transparent 70%),
+    hsl(240 10% 4%);
+}
+
+.card {
+  @apply rounded-2xl border border-border bg-panel/80 backdrop-blur-sm;
+}
